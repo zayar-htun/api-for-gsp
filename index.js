@@ -5,17 +5,7 @@ const cors = require("cors");
 app.use(cors());
 
 const multer = require("multer");
-const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
-        cb(null, "images/"); // Specify the directory where images should be saved
-    },
-    filename: (req, file, cb) => {
-        const uniqueSuffix = Date.now() + "-" + Math.round(Math.random() * 1e9);
-        cb(null, file.fieldname + "-" + uniqueSuffix + "-" + file.originalname);
-    },
-});
-
-const upload = multer({ storage: storage });
+const upload = multer({ dest: "images/" });
 
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -42,34 +32,17 @@ function generateRandomNumber(min, max) {
     return Math.floor(Math.random() * (max - min + 1) + min);
 }
 
-app.get("/teacher", async function (req, res) {
-    try {
-        const teachers = await db.collection("teachers").find().toArray();
-        res.status(200).json(teachers);
-    } catch (error) {
-        console.error("Error fetching teachers:", error);
-        res.status(500).json({ error: "Internal Server Error" });
-    }
-});
+//student register
+app.post("/sturegister", upload.single("photo"), async function (req, res) {
+    const fileName = req.file.filename;
+    const {name,email,profile,password} = req.body;
 
-app.get("/bestcourses", async function (req, res) {
-    const bestcourses = await db.collection("courses").aggregate([
-        { $limit: 9 }
-    ]).toArray();
-    res.status(200).json(bestcourses);
-});
-
-
-//register
-app.post("/stureg", upload.single("photo"), async function (req, res) {
-    const fileName = req.file ? req.file.filename : null;
-    const { name, email, password, profile } = req.body;
-    
     if (!name || !email || !password || !profile) {
-        return res
-            .status(400)
-            .json({ msg: "Required fields: name, email, profile, and password" });
+        return res.status(400).json({
+            msg: "Required fields: name, email, profile, and password",
+        });
     }
+
     let hash = await bcrypt.hash(password, 10);
 
     try {
@@ -96,6 +69,88 @@ app.post("/stureg", upload.single("photo"), async function (req, res) {
         });
     } catch (error) {
         console.error("Registration error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+
+//teacher register
+app.post("/teacherregister", upload.single("photo"), async function (req, res) {
+    const fileName = req.file.filename;
+    const {name,email,profile,password,bio} = req.body;
+
+    if (!name || !email || !password || !profile || !bio) {
+        return res.status(400).json({
+            msg: "Required fields: name, email, profile, bio and password",
+        });
+    }
+
+    let hash = await bcrypt.hash(password, 10);
+
+    try {
+        const result = await db.collection("users").insertOne({
+            username: name,
+            email,
+            password: hash,
+            profile,
+            role: "Teacher",
+            avatar: fileName,
+            bio:bio,
+            student_id: [],
+            courses: [],
+            chatRoom_id: [],
+            bluemark:false,
+            type: "visa",
+            amount: "30000",
+            cardNumber: generateRandomCardNumber(),
+            CVV: `${generateRandomNumber(100, 999)}`,
+            expired_data: "12/12/2027",
+        });
+        return res.status(201).json({
+            _id: result.insertedId,
+            name,
+            email,
+            profile,
+        });
+    } catch (error) {
+        console.error("Registration error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+//best 9 courses
+app.get("/bestcourses", async function (req, res) {
+    const bestcourses = await db
+        .collection("courses")
+        .aggregate([{ $sort: { rating: -1 } }, { $limit: 9 }])
+        .toArray();
+    res.status(200).json(bestcourses);
+});
+
+//course detail
+app.get("/courseDetail/:id", async function (req, res) {
+    const { id } = req.params; // Use "id" instead of "_id"
+
+    try {
+        const data = await db
+            .collection("courses")
+            .aggregate([
+                {
+                    $match: { _id: new ObjectId(id) }, // Use "id" here
+                },
+                {
+                    $lookup: {
+                        from: "users",
+                        foreignField: "_id",
+                        localField: "courseOwner",
+                        as: "teacher",
+                    },
+                },
+            ])
+            .toArray();
+
+        return res.json(data[0]);
+    } catch (error) {
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });

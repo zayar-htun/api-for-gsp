@@ -65,8 +65,13 @@ async function seedUsers() {
             bio: "Teacher bio",
             student_id: [], // Initialize an empty array
             courses: [],
-            chatRoom_id: null,
+            chatRoom_id: [],
             bluemark: generateRandomBoolean(),
+            type: ["visa", "mastercard"][Math.floor(Math.random() * 2)],
+            amount: 30000,
+            cardNumber: generateRandomCardNumber(),
+            CVV: `${generateRandomNumber(100, 999)}`,
+            expired_data: "12/12/2027",
         });
     }
 
@@ -92,7 +97,7 @@ async function seedUsers() {
             role: "Student",
             avatar: "student_avatar.jpg",
             enrolledCourses,
-            chatRoom_id: null,
+            chatRoom_id: [],
             type: ["visa", "mastercard"][Math.floor(Math.random() * 2)],
             amount: 30000,
             cardNumber: generateRandomCardNumber(),
@@ -199,11 +204,11 @@ async function seedCourses() {
 
             let thumb;
             if (category === "Accounting") {
-                thumb = "src/assets/courses/thumbs/acc.jpeg";
+                thumb = "/src/assets/courses/thumbs/acc.jpeg";
             } else if (category === "Graphic Design") {
-                thumb = "src/assets/courses/thumbs/gd.jpeg";
+                thumb = "/src/assets/courses/thumbs/gd.jpg";
             } else if (category === "Programming") {
-                thumb = "src/assets/courses/thumbs/prog.jpeg";
+                thumb = "/src/assets/courses/thumbs/prog.jpeg";
             }
 
             const title = `Course Title ${i + 1}`;
@@ -396,6 +401,7 @@ async function seedMessages() {
 }
 
 // Seed comments
+// Seed comments
 async function seedComments() {
     await db.collection("comments").deleteMany({});
 
@@ -414,26 +420,47 @@ async function seedComments() {
                 .findOne({ _id: course.courseOwner });
             const commentedCourse = course._id;
 
-            commentsData.push({
+            const comment = {
                 commentOwner: user._id,
-                commentedCourse,
+                commentedCourse: commentedCourse,
                 text: "Comment text",
                 created_at: new Date(),
-            });
+            };
+
+            // commentsData.push({
+            //     commentOwner: user._id,
+            //     commentedCourse,
+            //     text: "Comment text",
+            //     created_at: new Date(),
+            // });
+
+            const result = await db.collection("comments").insertOne(comment);
 
             await db.collection("courses").updateOne(
                 { _id: commentedCourse },
                 {
                     $push: {
-                        comments: commentsData[commentsData.length - 1],
+                        comments: result.insertedId,
                     },
                 }
             );
         }
     }
 
-    await db.collection("comments").insertMany(commentsData);
+    // await db.collection("comments").insertMany(commentsData);
 }
+
+// // Call the modified seedComments function
+// seedComments();
+
+
+// // Call the modified seedComments function
+// seedComments();
+
+
+// // Call the modified seedComments function
+// seedComments();
+
 
 //seed review 
 

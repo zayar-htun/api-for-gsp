@@ -193,11 +193,21 @@ async function seedCourses() {
         const numCoursesPerTeacher = 10;
 
         for (let i = 0; i < numCoursesPerTeacher; i++) {
-            const title = `Course Title ${i + 1}`;
-            const description = "Course description";
             const category = ["Graphic Design", "Programming", "Accounting"][
                 Math.floor(Math.random() * 3)
             ];
+
+            let thumb;
+            if (category === "Accounting") {
+                thumb = "/src/assets/courses/thumbs/acc.jpeg";
+            } else if (category === "Graphic Design") {
+                thumb = "/src/assets/courses/thumbs/gd.jpg";
+            } else if (category === "Programming") {
+                thumb = "/src/assets/courses/thumbs/prog.jpeg";
+            }
+
+            const title = `Course Title ${i + 1}`;
+            const description = "Course description";
             const price = Math.floor(Math.random() * 451) + 50; // Random price between 50 and 500
             const modules = [];
 
@@ -218,6 +228,7 @@ async function seedCourses() {
                 title,
                 description,
                 category,
+                thumb, // Add the thumb field based on the category
                 price,
                 courseOwner: teacher._id,
                 modules,
@@ -240,25 +251,26 @@ async function seedCourses() {
             .find({ role: "Student" })
             .toArray();
 
-            for (const student of students) {
-              // Generate random courseIds for each student
-              const studentCourseIds = [];
-              const numEnrolledCourses = Math.floor(Math.random() * courseIdsForStu.length) + 1;
-      
-              for (let i = 0; i < 20; i++) {
-                  const randomCourseId = courseIdsForStu[Math.floor(Math.random() * courseIdsForStu.length)];
-                  studentCourseIds.push(randomCourseId);
-              }
-      
-              await db
-                  .collection("users")
-                  .updateOne(
-                      { _id: student._id },
-                      { $set: { enrolledCourses: studentCourseIds } }
-                  );
-          }
+        for (const student of students) {
+            // Generate random courseIds for each student
+            const studentCourseIds = [];
+            const numEnrolledCourses = Math.floor(Math.random() * courseIdsForStu.length) + 1;
+
+            for (let i = 0; i < 20; i++) {
+                const randomCourseId = courseIdsForStu[Math.floor(Math.random() * courseIdsForStu.length)];
+                studentCourseIds.push(randomCourseId);
+            }
+
+            await db
+                .collection("users")
+                .updateOne(
+                    { _id: student._id },
+                    { $set: { enrolledCourses: studentCourseIds } }
+                );
+        }
     }
 }
+
 
 // Seed chat rooms
 async function seedChatRooms() {
@@ -384,6 +396,7 @@ async function seedMessages() {
 }
 
 // Seed comments
+// Seed comments
 async function seedComments() {
     await db.collection("comments").deleteMany({});
 
@@ -402,26 +415,47 @@ async function seedComments() {
                 .findOne({ _id: course.courseOwner });
             const commentedCourse = course._id;
 
-            commentsData.push({
+            const comment = {
                 commentOwner: user._id,
-                commentedCourse,
+                commentedCourse: commentedCourse,
                 text: "Comment text",
                 created_at: new Date(),
-            });
+            };
+
+            // commentsData.push({
+            //     commentOwner: user._id,
+            //     commentedCourse,
+            //     text: "Comment text",
+            //     created_at: new Date(),
+            // });
+
+            const result = await db.collection("comments").insertOne(comment);
 
             await db.collection("courses").updateOne(
                 { _id: commentedCourse },
                 {
                     $push: {
-                        comments: commentsData[commentsData.length - 1],
+                        comments: result.insertedId,
                     },
                 }
             );
         }
     }
 
-    await db.collection("comments").insertMany(commentsData);
+    // await db.collection("comments").insertMany(commentsData);
 }
+
+// // Call the modified seedComments function
+// seedComments();
+
+
+// // Call the modified seedComments function
+// seedComments();
+
+
+// // Call the modified seedComments function
+// seedComments();
+
 
 //seed review 
 
