@@ -6,6 +6,7 @@ app.use(cors());
 
 const multer = require("multer");
 const upload = multer({ dest: "images/" });
+const uploadVideo = multer({ dest: "videos/" })
 
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -35,7 +36,7 @@ function generateRandomNumber(min, max) {
 //student register
 app.post("/sturegister", upload.single("photo"), async function (req, res) {
     const fileName = req.file.filename;
-    const {name,email,profile,password} = req.body;
+    const { name, email, profile, password } = req.body;
 
     if (!name || !email || !password || !profile) {
         return res.status(400).json({
@@ -73,11 +74,10 @@ app.post("/sturegister", upload.single("photo"), async function (req, res) {
     }
 });
 
-
 //teacher register
 app.post("/teacherregister", upload.single("photo"), async function (req, res) {
     const fileName = req.file.filename;
-    const {name,email,profile,password,bio} = req.body;
+    const { name, email, profile, password, bio } = req.body;
 
     if (!name || !email || !password || !profile || !bio) {
         return res.status(400).json({
@@ -95,11 +95,11 @@ app.post("/teacherregister", upload.single("photo"), async function (req, res) {
             profile,
             role: "Teacher",
             avatar: fileName,
-            bio:bio,
+            bio: bio,
             student_id: [],
             courses: [],
             chatRoom_id: [],
-            bluemark:false,
+            bluemark: false,
             type: "visa",
             amount: "30000",
             cardNumber: generateRandomCardNumber(),
@@ -118,6 +118,32 @@ app.post("/teacherregister", upload.single("photo"), async function (req, res) {
     }
 });
 
+//upload module
+app.post("/uploadmodule",uploadVideo.single("video"),async function(req,res){
+    const fileName = req.file.filename;
+    const { title , description } = req.body;
+
+    if (!title || !description) {
+        return res.status(400).json({
+            msg: "Required fields: title and description",
+        });
+    }
+
+    try {
+        const result = await db.collection("modules").insertOne({
+            title: title,
+            video: fileName,
+            description: description
+        });
+        return res.status(201).json({
+            _id: result.insertedId
+        });
+    } catch (error) {
+        console.error("Registration error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+})
+
 //best 9 courses
 app.get("/bestcourses", async function (req, res) {
     const bestcourses = await db
@@ -126,6 +152,65 @@ app.get("/bestcourses", async function (req, res) {
         .toArray();
     res.status(200).json(bestcourses);
 });
+
+//auth middleware
+const auth = (req, res, next) => {
+    const authHeader = req.headers["authorization"];
+    const token = authHeader && authHeader.split(" ")[1];
+
+    if (!token) {
+        return res.status(401).json({ msg: "invalid: no token provided" });
+    }
+
+    jwt.verify(token, secret, function (err, user) {
+        if (err) return res.status(403).json({ msg: "invalid token" });
+
+        if (user) {
+            res.locals.user = user;
+            next();
+        }
+    });
+};
+
+//login
+app.post("/login", async function (req, res) {
+    const { email, password } = req.body;
+
+    if (!email || !password) {
+        return res.status(403).json({
+            msg: "Both email and password are required",
+        });
+    }
+
+    let user = await db.collection("users").findOne({ email });
+    if (!user) return res.status(403).json({ msg: "user not found" });
+
+    const match = await bcrypt.compare(password, user.password);
+
+    if (match) {
+        const token = jwt.sign(user, secret);
+        return res.status(201).json({ token, user });
+    }
+
+    return res.status(403).json({ msg: "incorrect password" });
+});
+
+// get user by token (through auth middleware)
+app.get("/user", auth, async (req, res) => {
+    const user = res.locals.user;
+
+    let result = await db
+        .collection("users")
+        .findOne({ _id: ObjectId(user._id) });
+
+    if (result) {
+        return res.status(200).json(result);
+    }
+
+    return res.status(401).json({ msg: "user not found" });
+});
+
+
 
 //course detail
 app.get("/courseDetail/:id", async function (req, res) {
@@ -154,6 +239,8 @@ app.get("/courseDetail/:id", async function (req, res) {
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
+
+
 
 app.listen(8888, () => {
     console.log("gsp api running at 8888");
