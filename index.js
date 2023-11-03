@@ -6,7 +6,7 @@ app.use(cors());
 
 const multer = require("multer");
 const upload = multer({ dest: "images/" });
-const uploadVideo = multer({ dest: "videos/" })
+const uploadVideo = multer({ dest: "videos/" });
 
 const bodyParser = require("body-parser");
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -118,40 +118,6 @@ app.post("/teacherregister", upload.single("photo"), async function (req, res) {
     }
 });
 
-//upload module
-app.post("/uploadmodule",uploadVideo.single("video"),async function(req,res){
-    const fileName = req.file.filename;
-    const { title , description } = req.body;
-
-    if (!title || !description) {
-        return res.status(400).json({
-            msg: "Required fields: title and description",
-        });
-    }
-
-    try {
-        const result = await db.collection("modules").insertOne({
-            title: title,
-            video: fileName,
-            description: description
-        });
-        return res.status(201).json({
-            _id: result.insertedId
-        });
-    } catch (error) {
-        console.error("Registration error:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
-    }
-})
-
-//best 9 courses
-app.get("/bestcourses", async function (req, res) {
-    const bestcourses = await db
-        .collection("courses")
-        .aggregate([{ $sort: { rating: -1 } }, { $limit: 9 }])
-        .toArray();
-    res.status(200).json(bestcourses);
-});
 
 //auth middleware
 const auth = (req, res, next) => {
@@ -210,6 +176,120 @@ app.get("/user", auth, async (req, res) => {
     return res.status(401).json({ msg: "user not found" });
 });
 
+//upload module
+app.post(
+    "/uploadmodule",
+    uploadVideo.single("video"),
+    async function (req, res) {
+        const fileName = req.file.filename;
+        const { title, description } = req.body;
+
+        if (!title || !description) {
+            return res.status(400).json({
+                msg: "Required fields: title and description",
+            });
+        }
+
+        try {
+            const result = await db.collection("modules").insertOne({
+                title: title,
+                video: fileName,
+                description: description,
+            });
+            return res.status(201).json({
+                _id: result.insertedId,
+            });
+        } catch (error) {
+            console.error("Registration error:", error);
+            return res.status(500).json({ error: "Internal Server Error" });
+        }
+    }
+);
+
+// //upload Course
+
+app.post("/uploadCourse", upload.single("photo"), auth, async function (req, res) {
+    const user = res.locals.user;
+    const fileName = req.file.filename;
+    const { title, description, category, price, modules } = req.body;
+
+    console.log(modules);
+
+    if (!title || !description || !category || !price || !modules || !Array.isArray(modules)) {
+        return res.status(400).json({
+            msg: "Required fields: title, description, category, price, and modules (as an array)",
+        });
+    }
+
+    // Convert the string IDs to ObjectId
+    const moduleIds = modules.map(moduleId => new ObjectId(moduleId));
+
+    console.log(moduleIds);
+
+    try {
+        const result = await db.collection("courses").insertOne({
+            title: title,
+            description: description,
+            category: category,
+            thumb: fileName, // Use the file name if a photo was uploaded
+            price: price,
+            courseOwner: new ObjectId(user._id),
+            modules: moduleIds, // Save the ObjectId array
+            rating: 0,
+            likes: [],
+            comments: []
+        });
+        return res.status(201).json({
+            _id: result.insertedId,
+        });
+    } catch (error) {
+        console.error("Registration error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+// app.post("/uploadCourse",upload.single("photo"),auth, async function (req, res) {
+//     const user = res.locals.user;
+//     const fileName = req.file.filename;
+//     const { title, description, category, price, modules } = req.body;
+
+//     if (!title || !description || !category || !price || !modules) {
+//         return res.status(400).json({
+//             msg: "Required fields: title, description, category, price, and modules",
+//         });
+//     }
+//      // Convert the string IDs to ObjectId
+//      const moduleIds = modules.map(moduleId => new ObjectId(moduleId));
+//     try {
+//         const result = await db.collection("courses").insertOne({
+//             title: title,
+//             description: description,
+//             category: category,
+//             thumb: fileName, // Use the file name if a photo was uploaded
+//             price: price,
+//             courseOwner: new ObjectId(user._id), 
+//             modules: modules,
+//             rating: 0,
+//             likes: [],
+//             comments: []
+//         });
+//         return res.status(201).json({
+//             _id: result.insertedId,
+//         });
+//     } catch (error) {
+//         console.error("Registration error:", error);
+//         return res.status(500).json({ error: "Internal Server Error" });
+//     }
+// });
+
+//best 9 courses
+app.get("/bestcourses", async function (req, res) {
+    const bestcourses = await db
+        .collection("courses")
+        .aggregate([{ $sort: { rating: -1 } }, { $limit: 9 }])
+        .toArray();
+    res.status(200).json(bestcourses);
+});
 
 
 //course detail
@@ -239,8 +319,6 @@ app.get("/courseDetail/:id", async function (req, res) {
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
-
-
 
 app.listen(8888, () => {
     console.log("gsp api running at 8888");
