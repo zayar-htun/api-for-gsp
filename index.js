@@ -118,7 +118,6 @@ app.post("/teacherregister", upload.single("photo"), async function (req, res) {
     }
 });
 
-
 //auth middleware
 const auth = (req, res, next) => {
     const authHeader = req.headers["authorization"];
@@ -208,79 +207,54 @@ app.post(
 
 // //upload Course
 
-app.post("/uploadCourse", upload.single("photo"), auth, async function (req, res) {
-    const user = res.locals.user;
-    const fileName = req.file.filename;
-    const { title, description, category, price, modules } = req.body;
+app.post(
+    "/uploadCourse",
+    upload.single("photo"),
+    auth,
+    async function (req, res) {
+        const user = res.locals.user;
+        const fileName = req.file.filename;
+        const { title, description, category, price, modules } = req.body;
 
-    console.log(modules);
+        console.log(modules);
+        console.log(typeof modules);
 
-    if (!title || !description || !category || !price || !modules || !Array.isArray(modules)) {
-        return res.status(400).json({
-            msg: "Required fields: title, description, category, price, and modules (as an array)",
-        });
+        if (!title || !description || !category || !price || !modules) {
+            return res.status(400).json({
+                msg: "Required fields: title, description, category, price, and modules (as an array)",
+            });
+        }
+        const moduleIds = modules.split(",");
+
+        // Convert the string IDs to ObjectId
+        const moduleObjectIds = moduleIds.map(
+            moduleId => new ObjectId(moduleId)
+        );
+
+        console.log(moduleObjectIds);
+
+        try {
+            const result = await db.collection("courses").insertOne({
+                title: title,
+                description: description,
+                category: category,
+                thumb: fileName, // Use the file name if a photo was uploaded
+                price: price,
+                courseOwner: new ObjectId(user._id),
+                modules: moduleObjectIds, // Save the ObjectId array
+                rating: 0,
+                likes: [],
+                comments: [],
+            });
+            return res.status(201).json({
+                _id: result.insertedId,
+            });
+        } catch (error) {
+            console.error("Registration error:", error);
+            return res.status(500).json({ error: "Internal Server Error" });
+        }
     }
-
-    // Convert the string IDs to ObjectId
-    const moduleIds = modules.map(moduleId => new ObjectId(moduleId));
-
-    console.log(moduleIds);
-
-    try {
-        const result = await db.collection("courses").insertOne({
-            title: title,
-            description: description,
-            category: category,
-            thumb: fileName, // Use the file name if a photo was uploaded
-            price: price,
-            courseOwner: new ObjectId(user._id),
-            modules: moduleIds, // Save the ObjectId array
-            rating: 0,
-            likes: [],
-            comments: []
-        });
-        return res.status(201).json({
-            _id: result.insertedId,
-        });
-    } catch (error) {
-        console.error("Registration error:", error);
-        return res.status(500).json({ error: "Internal Server Error" });
-    }
-});
-
-// app.post("/uploadCourse",upload.single("photo"),auth, async function (req, res) {
-//     const user = res.locals.user;
-//     const fileName = req.file.filename;
-//     const { title, description, category, price, modules } = req.body;
-
-//     if (!title || !description || !category || !price || !modules) {
-//         return res.status(400).json({
-//             msg: "Required fields: title, description, category, price, and modules",
-//         });
-//     }
-//      // Convert the string IDs to ObjectId
-//      const moduleIds = modules.map(moduleId => new ObjectId(moduleId));
-//     try {
-//         const result = await db.collection("courses").insertOne({
-//             title: title,
-//             description: description,
-//             category: category,
-//             thumb: fileName, // Use the file name if a photo was uploaded
-//             price: price,
-//             courseOwner: new ObjectId(user._id), 
-//             modules: modules,
-//             rating: 0,
-//             likes: [],
-//             comments: []
-//         });
-//         return res.status(201).json({
-//             _id: result.insertedId,
-//         });
-//     } catch (error) {
-//         console.error("Registration error:", error);
-//         return res.status(500).json({ error: "Internal Server Error" });
-//     }
-// });
+);
 
 //best 9 courses
 app.get("/bestcourses", async function (req, res) {
@@ -291,6 +265,12 @@ app.get("/bestcourses", async function (req, res) {
     res.status(200).json(bestcourses);
 });
 
+//all courses
+app.get("/allcourses", async function (req, res) {
+    const allCourses = await db.collection("courses").find().toArray();
+
+    res.status(200).json(allCourses);
+});
 
 //course detail
 app.get("/courseDetail/:id", async function (req, res) {
@@ -311,6 +291,24 @@ app.get("/courseDetail/:id", async function (req, res) {
                         as: "teacher",
                     },
                 },
+                {
+                    $lookup: {
+                        from: "comments",
+                        foreignField: "_id",
+                        localField: "comments",
+                        as: "commentDetail",
+                        pipeline: [
+                            {
+                                $lookup: {
+                                    from: "users",
+                                    localField: "commentOwner",
+                                    foreignField: "_id",
+                                    as: "commentUser",
+                                },
+                            },
+                        ],
+                    },
+                },
             ])
             .toArray();
 
@@ -319,6 +317,56 @@ app.get("/courseDetail/:id", async function (req, res) {
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
+
+//upload comment
+app.post("/uploadComment", auth, async function (req, res) {
+    const user = res.locals.user;
+    const { commentedCourse, text } = req.body;
+
+    if (!commentedCourse || !text) {
+        return res.status(400).json({
+            msg: "Required fields: Text required!!!",
+        });
+    }
+
+    try {
+        const courseObjectId = new ObjectId(commentedCourse);
+        const result = await db.collection("comments").insertOne({
+            commentOwner: new ObjectId(user._id),
+            commentedCourse: courseObjectId,
+            text: text,
+            created_at: new Date(),
+        });
+
+        console.log(result.insertedId);
+        if (result.insertedId) {
+            // Check if commentedCourse exists in the courses collection
+            const existingCourse = await db.collection("courses").findOne({
+                _id: courseObjectId,
+            });
+
+            if (existingCourse) {
+                // Update the corresponding course document with the new comment
+                await db.collection("courses").updateOne(
+                    { _id: courseObjectId },
+                    {
+                        $push: {
+                            comments: result.insertedId,
+                        },
+                    }
+                );
+            }
+
+            return res.status(201).json({
+                _id: result.insertedId,
+            });
+        }
+    } catch (error) {
+        console.error("Registration error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
 
 app.listen(8888, () => {
     console.log("gsp api running at 8888");
