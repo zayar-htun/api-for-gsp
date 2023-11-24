@@ -57,7 +57,7 @@ app.post("/sturegister", upload.single("photo"), async function (req, res) {
             enrolledCourses: [],
             chatRoom_id: [],
             type: "visa",
-            amount: "30000",
+            amount: 30000,
             cardNumber: generateRandomCardNumber(),
             CVV: `${generateRandomNumber(100, 999)}`,
             expired_data: "12/12/2027",
@@ -101,7 +101,7 @@ app.post("/teacherregister", upload.single("photo"), async function (req, res) {
             chatRoom_id: [],
             bluemark: false,
             type: "visa",
-            amount: "30000",
+            amount: 30000,
             cardNumber: generateRandomCardNumber(),
             CVV: `${generateRandomNumber(100, 999)}`,
             expired_data: "12/12/2027",
@@ -363,6 +363,230 @@ app.post("/uploadComment", auth, async function (req, res) {
         }
     } catch (error) {
         console.error("Registration error:", error);
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+//payment api
+app.post("/payment", auth, async (req, res) => {
+    const { accountNo, pincode, receiveNo, amount, id, teacherId } = req.body;
+    const user = res.locals.user;
+
+    if (!pincode || !accountNo || !receiveNo || !amount) {
+        return res.status(403).json({
+            msg: "Account Number, Pincode , Receive Account Number ,  are required",
+        });
+    }
+
+    let findAccount = await db.collection("users").findOne({
+        cardNumber: receiveNo,
+    });
+
+    if (!findAccount) return res.status(403).json({ msg: "account not found" });
+
+    let senderAccount = await db.collection("users").findOne({
+        cardNumber: accountNo,
+    });
+
+    // Check if the sender's account exists
+    if (!senderAccount) {
+        return res.status(403).json({ msg: "Sender's account not found" });
+    }
+
+    // Check if the provided pincode matches the sender's pincode
+    if (senderAccount.CVV !== pincode) {
+        return res
+            .status(403)
+            .json({ msg: "Incorrect pincode for the sender's account" });
+    }
+
+    const numericAmount = parseInt(amount);
+    const receiveAccount = parseInt(receiveNo);
+    const accountGiving = parseInt(accountNo);
+    const courseId = new ObjectId(id);
+    await db
+        .collection("users")
+        .updateOne(
+            { cardNumber: receiveAccount },
+            { $inc: { amount: numericAmount } }
+        );
+
+    await db
+        .collection("users")
+        .updateOne(
+            { cardNumber: accountGiving },
+            { $inc: { amount: -numericAmount } }
+        );
+
+    await db
+        .collection("users")
+        .updateOne(
+            { _id: new ObjectId(user._id) },
+            { $addToSet: { enrolledCourses: courseId } }
+        );
+
+    await db
+        .collection("users")
+        .updateOne(
+            { _id: new ObjectId(teacherId) },
+            { $addToSet: { student_id: new ObjectId(user._id) } }
+        );
+
+    const result = await db.collection("chatRooms").insertOne({
+        participant: [new ObjectId(user._id), new ObjectId(teacherId)],
+        messages: [],
+    });
+
+    if (result.insertedId) {
+        const chatRoomId = result.insertedId;
+
+        // Update teacher's document with chat room IDs
+        await db.collection("users").updateOne(
+            {
+                _id: new ObjectId(teacherId),
+                chatRoom_id: { $exists: true, $eq: null },
+            },
+            { $set: { chatRoom_id: [chatRoomId] } }
+        );
+
+        await db.collection("users").updateOne(
+            {
+                _id: new ObjectId(teacherId),
+                chatRoom_id: { $exists: true, $ne: null },
+            },
+            { $addToSet: { chatRoom_id: chatRoomId } }
+        );
+
+        // Update user's document with chat room IDs
+        await db.collection("users").updateOne(
+            {
+                _id: new ObjectId(user._id),
+                chatRoom_id: { $exists: true, $eq: null },
+            },
+            { $set: { chatRoom_id: [chatRoomId] } }
+        );
+
+        await db.collection("users").updateOne(
+            {
+                _id: new ObjectId(user._id),
+                chatRoom_id: { $exists: true, $ne: null },
+            },
+            { $addToSet: { chatRoom_id: chatRoomId } }
+        );
+    }
+    return res.status(200).json({ msg: "Payment successful" });
+});
+
+//enrolled courses
+app.get("/enrolledCourses", auth, async function (req, res) {
+    const user = res.locals.user;
+    try {
+        const data = await db
+            .collection("users")
+            .aggregate([
+                {
+                    $match: { _id: new ObjectId(user._id) }, // Use "id" here
+                },
+                {
+                    $lookup: {
+                        from: "courses",
+                        foreignField: "_id",
+                        localField: "enrolledCourses",
+                        as: "coursesEnrolled",
+                    },
+                },
+            ])
+            .toArray();
+
+        return res.json(data[0]);
+    } catch (error) {
+        return res.status(500).json({ error: "Internal Server Error" });
+    }
+});
+
+//top up
+
+//login
+app.post("/topup", auth, async function (req, res) {
+    const user = res.locals.user;
+    const { name, accountNo, pin, amount } = req.body;
+
+    console.log(name);
+    console.log(accountNo);
+    console.log(pin);
+    console.log(amount);
+
+    if (!name || !accountNo || !pin || !amount) {
+        return res.status(403).json({
+            msg: "Name , Account Non, Pin code and Amount require when top up",
+        });
+    }
+
+    const numericAmount = parseInt(amount);
+
+    await db
+        .collection("users")
+        .updateOne(
+            { _id: new ObjectId(user._id) },
+            { $inc: { amount: numericAmount } }
+        );
+
+    return res.status(200).json({ msg: "Payment successful" });
+});
+
+// app.get("/chatRoom", auth, async function (req, res) {
+//     const user = res.locals.user;
+//     try {
+
+//         const data = user.enrolledCourses.map(userEn => {
+//             await db
+//             .collection("chatRooms")
+//             .aggregate([
+//                 {
+//                     $match: { _id: { $in: [user.enrolledCourses] } },
+//                 },
+//             ])
+//             .toArray();
+//         })
+//         // const data = await db
+//         //     .collection("chatRooms")
+//         //     .aggregate([
+//         //         {
+//         //             $match: { _id: { $in: [user.enrolledCourses] } },
+//         //         },
+//         //     ])
+//         //     .toArray();
+
+//         console.log(data[0]);
+
+//         return res.json(data[0]);
+//     } catch (error) {
+//         return res.status(500).json({ error: "Internal Server Error" });
+//     }
+// });
+
+app.get("/chatRoom", auth, async function (req, res) {
+    const user = res.locals.user;
+    try {
+        const data = await Promise.all(
+            user.enrolledCourses.map(async (courseId) => {
+                const result = await db
+                    .collection("chatRooms")
+                    .aggregate([
+                        {
+                            $match: { _id: courseId },
+                        },
+                    ])
+                    .toArray();
+                return result[0]; // Assuming you expect only one document per course
+            })
+        );
+
+        console.log(data);
+
+        return res.json(data);
+    } catch (error) {
+        console.error(error);
         return res.status(500).json({ error: "Internal Server Error" });
     }
 });
