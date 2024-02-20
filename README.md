@@ -11,8 +11,10 @@ This repository contains a Node.js application that serves as an API for an inte
 
 2. Run seeder.js file to get data in database:
 
+   ```bash
    node seeder.js
 
-2. Run index.js file to run project:
 
+3. Run index.js file to run project:
+   ```bash
    nodemon index.js
